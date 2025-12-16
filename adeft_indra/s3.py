@@ -4,8 +4,8 @@ import boto3
 import tempfile
 
 from adeft.download import get_s3_models
+from adeft.util import str2filename
 
-from adeft_indra.model_building.escape import escape_filename
 from adeft_indra.locations import S3_BUCKET_ADEFT, S3_MODELS_PATH
 
 
@@ -15,7 +15,7 @@ def model_to_s3(disambiguator):
     classifier = disambiguator.classifier
 
     shortforms = disambiguator.shortforms
-    model_name = ':'.join(sorted(escape_filename(shortform)
+    model_name = '&'.join(sorted(str2filename(shortform)
                                  for shortform in shortforms))
     model_map = {key: model_name for key in grounding_dict}
     s3_models = get_s3_models()
