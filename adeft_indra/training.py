@@ -152,7 +152,7 @@ def build_corpus(grounding_dict):
     return corpus
 
 
-def get_existing_grounding_info(shortform, *, path=None):
+def get_existing_grounding_info(shortform, *, path=ADEFT_PATH):
     """Get grounding_map, names, and pos_labels for an existing adeft model.
 
     Parameters
@@ -168,8 +168,7 @@ def get_existing_grounding_info(shortform, *, path=None):
         the grounding info for a past model.
 
     """
-    if path is None:
-        path = Path(ADEFT_PATH)
+    path = Path(path)
     path /= "models"
     available = adeft.get_available_models(path=path)
     model_name = available[shortform]
@@ -188,7 +187,6 @@ def get_existing_grounding_info(shortform, *, path=None):
 def validate_and_refit_model(
         grounding_dict, names, pos_labels, *,
         cv=5,
-        *,
         parameters=None,
         random_state=None,
         n_jobs=1,
