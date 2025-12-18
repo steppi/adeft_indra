@@ -28,9 +28,14 @@ def retrain_model_worker(shortform, results_db_path):
         names,
         pos_labels,
         random_state=1729,
+        min_class_size=10,
     )
+    if model is None:
+        logger.warning(f"Insufficient data to retrain model {model_name}.")
+        results_manager[model_name] = None
+        return
     logger.info(f"{model_name} finished retraining.")
-    results_manager[model_name] = model
+    results_manager[model_name] = model.get_model_info()
 
 
 if __name__ == "__main__":
@@ -46,6 +51,7 @@ if __name__ == "__main__":
     reduced_shortforms = list(
         {
             val: key for key, val in models_dict.items() if val not in results_manager
+            and key != "__TEST"
         }.values()
     )
 
