@@ -1,5 +1,6 @@
 import gzip
 import json
+import logging
 
 from collections import Counter
 from pathlib import Path
@@ -14,6 +15,9 @@ from adeft.modeling.label import AdeftLabeler
 
 from indra_db_lite.api import get_text_ref_ids_for_agent_text
 from indra_db_lite.api import get_plaintexts_for_text_ref_ids
+
+
+logger = logging.getLogger(__file__)
 
 
 def adeftify(shortforms, *, cutoff=2.0):
@@ -190,6 +194,7 @@ def validate_and_refit_model(
         parameters=None,
         random_state=None,
         n_jobs=1,
+        min_class_size=10,
 ):
     """Build a corpus and then validate and train a model."""
     if parameters is None:
@@ -214,8 +219,21 @@ def validate_and_refit_model(
     X, y, trids = zip(*corpus)
     counts = Counter(y)
     keep = [
-        (text, label, trid) for text, label, trid in zip(X, y, trids) if counts[label] >= 10
+        (text, label, trid) for text, label, trid in zip(X, y, trids)
+        if counts[label] >= min_class_size
     ]
+    if not keep:
+        logger.warning(
+            "No data remains after excluding classes with fewer than"
+            f" {min_class_size} examples. Returning None."
+        )
+        return None
     X, y, trids = zip(*keep)
+    if len(set(y)) == 1:
+        logger.warning(
+            "Only a single class remains after excluding classes with fewer"
+            f" than {min_class_size} examples. Returning None."
+        )
+        return None
     model.cv(X, y, param_grid=param_grid, n_jobs=n_jobs, cv=cv)
     return model
