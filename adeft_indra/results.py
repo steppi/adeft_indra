@@ -89,6 +89,7 @@ class ResultsManager:
                     raise DuplicateKeyError(
                         f"Attempted to update value for existing key {key}."
                     )
+            conn.commit()
 
     def __delitem__(self, key):
         key = self._validate_key(key)
@@ -118,3 +119,19 @@ class ResultsManager:
             with closing(conn.cursor()) as cur:
                 for key, raw_value in cur.execute(query):
                     yield key, pickle.loads(raw_value)
+
+    def keys(self) -> Iterator[str]:
+        """Iterate through keys."""
+        query = f"SELECT key FROM results_table"
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with closing(conn.cursor()) as cur:
+                for (key,) in cur.execute(query):
+                    yield key
+
+    def values(self) -> Iterator[Any]:
+        """Iterate through values."""
+        query = f"SELECT value FROM results_table"
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with closing(conn.cursor()) as cur:
+                for (value,) in cur.execute(query):
+                    yield value
