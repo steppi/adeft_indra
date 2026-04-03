@@ -72,7 +72,9 @@ def get_test_cases_for_model(model_name):
         if len([label for label in test_data.values() if label == curie]) < 5:
             continue
         namespace, identifier = curie.split(':', maxsplit=1)
-        train_info = get_training_cases_for_grounding(namespace, identifier)
+        train_info = get_training_cases_for_grounding(
+            namespace, identifier, exclude_trids=set(test_data)
+        )
         if train_info is None:
             continue
         result.append(

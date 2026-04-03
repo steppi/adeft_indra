@@ -49,6 +49,8 @@ def process_test_case(args: Tuple) -> None:
             f"{max_features_list}"
         )
     train_texts = list(get_plaintexts_for_text_ref_ids(train_trids))
+    # Exclude texts that appear in the training data from the test
+    # data.
     test_texts = get_plaintexts_for_text_ref_ids(
         test_data,
         text_types=['abstract', 'fulltext'],
@@ -140,6 +142,7 @@ if __name__ == '__main__':
                 is None
         )
     ]
+
     gen = random.Random(1729)
     gen.shuffle(test_cases)
     with Pool(n_jobs) as pool:

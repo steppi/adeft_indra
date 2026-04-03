@@ -13,8 +13,13 @@ from adeft.locations import ADEFT_PATH
 from adeft.modeling.classify import AdeftClassifier
 from adeft.modeling.label import AdeftLabeler
 
+from indra.ontology.bio import BioOntology
+
 from indra_db_lite.api import get_text_ref_ids_for_agent_text
 from indra_db_lite.api import get_plaintexts_for_text_ref_ids
+
+
+bio_ont = BioOntology()
 
 
 logger = logging.getLogger(__file__)
@@ -58,6 +63,61 @@ def adeftify(shortforms, *, cutoff=2.0):
         ]
         longforms_dict[shortform] = longforms
     return longforms_dict
+
+
+def comp_key(gilda_match):
+    namespace = gilda_match.get_namespaces().pop()
+    namespace_priority = {"FPLX": 0, "HGNC": 1}.get(namespace, 2)
+    return (namespace_priority, gilda_match.score)
+
+
+top_level_mesh_terms_of_interest = {
+    "D007287", # Inorganic Chemicals
+    "D009930", # Organic Chemicals
+    "D006571", # Heterocyclic Compounds
+    "D011083", # Polycyclic Compounds
+    "D046911", # Macromolecular Substances
+    "D006730", # Hormones, Hormone Substitutes, and Hormone Antagonists
+    "D045762", # Enzymes and Coenzymes
+    "D002241", # Carbohydrates
+    "D008055", # Lipids
+    "D000602", # Amino Acids, Peptides, and Proteins
+    "D009706", # Nucleic Acids, Nucleotides, and Nucleosides
+    "D045424", # Complex Mixtures
+    "D001685", # Biological Factors
+    "D001697", # Biomedical and Dental Materials
+    "D004364", # Pharmaceutical Preparations
+    "D020164", # Chemical Actions and Uses
+    "D007239", # Infections
+    "D009369", # Neoplasms
+    "D009140", # Musculoskeletal Diseases
+    "D004066", # Digestive System Diseases
+    "D009057", # Stomatognathic Diseases
+    "D012140", # Respiratory Tract Diseases
+    "D010038", # Otorhinolaryngologic Diseases
+    "D009422", # Nervous System Diseases
+    "D005128", # Eye Diseases
+    "D000091642", # Urogenital Diseases
+    "D002318", # Cardiovascular Diseases
+    "D006425", # Hemic and Lymphatic Diseases
+    "D009358", # Congenital, Hereditary, and Neonatal Diseases
+    "D017437", # Skin and Connective Tissue Diseases
+    "D009750", # Nutritional and Metabolic Diseases
+    "D004700", # Endocrine System Diseases
+    "D007154", # Immune System Diseases
+    "D007280", # Disorders of Environmental Origin
+    "D000820", # Animal Diseases
+    "D013568", # Pathological Conditions, Signs and Symptoms
+    "D009784", # Occupational Diseases
+    "D064419", # Chemically-Induced Disorders
+    "D014947", # Wounds and Injuries
+}
+
+
+def mesh_term_of_interest(mesh_id):
+    descendants = bio_ont.descendants_rel("MESH", mesh_id, ["isa"])
+    descendants = {id_ for _, id_ in descendants}
+    return bool(descendants & top_level_mesh_terms_of_interest)
 
 
 def auto_ground_longforms(longforms_dict):
@@ -108,7 +168,11 @@ def auto_ground_longforms(longforms_dict):
     for shortform, longforms in longforms_dict.items():
         grounding_map = {}
         for longform, _, _ in longforms:
-            groundings = gilda.ground(longform)
+            # if the longform is the shortform itself, then filter it out. We haven't
+            # disambiguated anything.
+            if longform == shortform.lower() or len(longform) < len(shortform):
+                continue
+            groundings = sorted(gilda.ground(longform), key=comp_key)
             if groundings:
                 grounding_term = groundings[0].term
                 grounding = f"{grounding_term.db}:{grounding_term.id}"
@@ -117,7 +181,16 @@ def auto_ground_longforms(longforms_dict):
             else:
                 grounding_map[longform] = "ungrounded"
         grounding_dict[shortform] = grounding_map
-    pos_labels = list(names.keys())
+    candidate_pos_labels = list(names.keys())
+    # filter out mesh labels for entities deemed not of interest from pos_labels
+    pos_labels = []
+    for label in candidate_pos_labels:
+        if label.startswith("MESH:"):
+            _, mesh_id = label.split(":", maxsplit=1)
+            if not mesh_term_of_interest(mesh_id):
+                continue
+        pos_labels.append(label)
+        
     return grounding_dict, names, pos_labels
 
 
@@ -189,7 +262,10 @@ def get_existing_grounding_info(shortform, *, path=ADEFT_PATH):
 
 
 def validate_and_refit_model(
-        grounding_dict, names, pos_labels, *,
+        shortforms,
+        corpus,
+        pos_labels,
+        *,
         cv=5,
         parameters=None,
         random_state=None,
@@ -212,9 +288,6 @@ def validate_and_refit_model(
     # explore more flexible models or do any kind of model comparison we
     # will need a proper validation pipeline.
     param_grid = {key: [val] for key, val in parameters.items()}
-
-    shortforms = list(grounding_dict.keys())
-    corpus = build_corpus(grounding_dict)
     model = AdeftClassifier(shortforms, pos_labels, random_state=random_state)
     X, y, trids = zip(*corpus)
     counts = Counter(y)

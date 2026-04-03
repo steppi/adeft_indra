@@ -1,4 +1,5 @@
 from indra.databases.hgnc_client import get_uniprot_id
+from indra.literature.pubmed_client import get_ids_for_mesh
 
 from indra_db_lite import get_entrez_pmids_for_hgnc
 from indra_db_lite import get_entrez_pmids_for_uniprot
@@ -10,7 +11,13 @@ from indra_db_lite import get_text_ref_ids_for_pmids
 from opaque.nlp.featurize import BaselineTfidfVectorizer
 
 
-def get_training_cases_for_grounding(namespace, identifier):
+def get_training_cases_for_grounding(
+        namespace, identifier, *, exclude_trids=None
+):
+    if exclude_trids is None:
+        exclude_trids = set()
+    exclude_trids = set(exclude_trids)
+
     entrez_pmids = set()
     mesh_pmids = set()
     mesh_terms = None
@@ -26,7 +33,10 @@ def get_training_cases_for_grounding(namespace, identifier):
         if mesh_terms:
             for mesh_id in mesh_terms:
                 mesh_pmids.update(
-                    get_pmids_for_mesh_term(mesh_id, major_topic=True)
+                    [
+                        int(id_)
+                        for id_ in get_ids_for_mesh(mesh_id, major_topic=True)
+                    ]
                 )
     elif namespace == 'MESH':
         mesh_terms = [identifier]
@@ -65,9 +75,11 @@ def get_training_cases_for_grounding(namespace, identifier):
     train_trids_set = set(train_trids)
     entrez_trids = [
         trid for trid in entrez_trids if trid in train_trids_set
+        if trid not in exclude_trids
     ]
     mesh_trids = [
         trid for trid in mesh_trids if trid in train_trids_set
+        if trid not in exclude_trids
     ]
     return {
         "mesh_terms": mesh_terms,

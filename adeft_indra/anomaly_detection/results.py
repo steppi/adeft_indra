@@ -96,6 +96,7 @@ class ResultsManager:
                         pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
                     )
                 )
+            conn.commit()
 
     @classmethod
     def get(cls, table: str, key: str) -> Any:
@@ -152,6 +153,8 @@ class ResultsManager:
             columns=[
                 'shortform',
                 'grounding',
+                'nu',
+                'max_features',
                 'num_entrez',
                 'num_mesh',
                 'sens_neg_set',
@@ -182,6 +185,7 @@ def process_row(results_row) -> list:
     num_mesh = results_json['train_info']['num_mesh_texts']
     best_params = results_json['best_params']
     best_params = (best_params['nu'], best_params['max_features'])
+    best_nu, best_max_features = best_params
     train_stats = results_json['train_stats'][best_params]
     sens_neg_set = train_stats[0]
     mean_spec = train_stats[2]
@@ -206,6 +210,8 @@ def process_row(results_row) -> list:
     return [
         shortform,
         grounding,
+        best_nu,
+        best_max_features,
         num_entrez,
         num_mesh,
         sens_neg_set,
