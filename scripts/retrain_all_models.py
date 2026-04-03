@@ -8,8 +8,10 @@ from adeft.locations import ADEFT_PATH
 from adeft.util import get_canonical_model_name
 
 from adeft_indra.results import ResultsManager
+from adeft_indra.training import build_corpus
 from adeft_indra.training import get_existing_grounding_info
 from adeft_indra.training import validate_and_refit_model
+
 
 logger = logging.getLogger(__file__)
 
@@ -23,9 +25,11 @@ def retrain_model_worker(shortform, results_db_path):
         return
 
     logger.info(f"Retraining {model_name}.")
+    shortforms = grounding_dict.keys()
+    corpus = build_corpus(grounding_dict)
     model = validate_and_refit_model(
-        grounding_dict,
-        names,
+        shortforms,
+        corpus
         pos_labels,
         random_state=1729,
         min_class_size=10,
