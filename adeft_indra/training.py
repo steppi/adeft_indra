@@ -168,7 +168,7 @@ cosine_similarity = CosineSimilarity()
 def nearest_common_ancestor(grounding1, grounding2):
     ns1, id1 = grounding1.split(":", maxsplit=1)
     ns2, id2 = grounding2.split(":", maxsplit=1)
-    descendant = bio_ont.nearest_common_descendent(ns1, id1, ns2, id2, ["isa"])
+    descendant = bio_ont.nearest_common_descendant(ns1, id1, ns2, id2, ["isa"])
     if descendant is not None:
         ns, id_ = descendant
         return f"{ns}:{id_}"
