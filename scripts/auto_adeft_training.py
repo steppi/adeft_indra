@@ -3,13 +3,10 @@ import json
 import logging
 import multiprocessing
 
-import adeft
-
-from adeft.locations import ADEFT_PATH
 from adeft.util import get_canonical_model_name
 
 from adeft_indra.results import ResultsManager
-from adeft_indra.cluster_longforms import generate_adeft_grounding_info
+from adeft_indra.training import adeft_constructor
 
 
 
@@ -19,9 +16,8 @@ logger = logging.getLogger(__file__)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("results_db_path")
     parser.add_argument("shortforms_file")
-
+    parser.add_argument("results_db_path")
 
     args = parser.parse_args()
     results_manager = ResultsManager(args.results_db_path)
@@ -34,7 +30,7 @@ if __name__ == "__main__":
 
         logger.info(f"Generating grounding info for shortforms {shortforms}")
         try:
-            grounding_dict, names, pos_labels =  generate_adeft_grounding_info(shortforms)
+            grounding_dict, names, pos_labels =  adeft_constructor.get_grounding_info(shortforms)
         except Exception as e:
             logger.warning(f"Failure for {shortforms} due to exception {e}")
             grounding_dict = None
@@ -52,5 +48,4 @@ if __name__ == "__main__":
             "pos_labels": pos_labels,
             "exception": exception,
         }
-
         results_manager[model_name] = result

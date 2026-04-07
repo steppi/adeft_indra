@@ -1,74 +1,74 @@
-import gzip
-import json
-import logging
-
-from collections import Counter
-from pathlib import Path
-
-import adeft
 import gilda
+import logging
+import torch
 
-from adeft.discover import AdeftMiner
-from adeft.locations import ADEFT_PATH
-from adeft.modeling.classify import AdeftClassifier
-from adeft.modeling.label import AdeftLabeler
+from sentence_transformers import SentenceTransformer
 
+from indra.databases.hgnc_client import get_uniprot_id
 from indra.ontology.bio import BioOntology
 
-from indra_db_lite.api import get_text_ref_ids_for_agent_text
-from indra_db_lite.api import get_plaintexts_for_text_ref_ids
+from indra_db_lite import get_entrez_pmids_for_hgnc
+from indra_db_lite import get_entrez_pmids_for_uniprot
+from indra_db_lite import get_mesh_terms_for_grounding as _get_mesh_terms_for_grounding
+from indra_db_lite import get_plaintexts_for_text_ref_ids
+from indra_db_lite import get_text_ref_ids_for_agent_text
+from indra_db_lite import get_text_ref_ids_for_pmids
 
+from opaque.nlp.featurize import BaselineTfidfVectorizer
 
-bio_ont = BioOntology()
+from adeft.construct import (
+    AdeftConstructor, AdeftTrainer, GroundingClusterer, DistantEvalCorpusConstructor
+)
 
 
 logger = logging.getLogger(__file__)
 
 
-def adeftify(shortforms, *, cutoff=2.0):
-    """Identify longform expansions for shortforms in texts from indra_db_lite
+bio_ont = BioOntology()
 
-    Parameters
-    ----------
-    shortforms : list[str]
-    cutoff : Optional[float]
-        Adeft's Acromine based algorithm scores each potential longform
-        expansion. Filter out all candidate longform expansions with score
-        below `cutoff`. Default: 2.0
+class ContentWrapper:
+    """Shim for `indra_db_lite.api.TextContent`
 
-    Returns
-    -------
-    dict[str, list[tuple[str, int, float]]]
-        A dictionary mapping shortforms to lists of tuples. Each tuple
-        has three entries, a proposed longform expansion, the count of the
-        number of times this longform expansion appeared in the text
-        corpus that was pulled from ``indra_db_lite``, and the score
-        assigned to this longform expansion by Adeft's scoring algorithm.
-
+    Bridge the API of `TextContent` with what is expected by
+    `AdeftConstructor`
     """
-    miners = {}
-    for shortform in shortforms:
-        trids = get_text_ref_ids_for_agent_text(shortform)
-        content = get_plaintexts_for_text_ref_ids(trids, contains=shortforms)
-        miners[shortform] = AdeftMiner(shortform)
-        miners[shortform].process_texts(content)
-        del content
+    def __init__(self, text_content):
+        self.text_content = text_content
 
-    longforms_dict = {}
-    for shortform in shortforms:
-        longforms = miners[shortform].get_longforms()
-        longforms = [
-            (longform, count, score) for longform, count, score in longforms
-            if count*score > cutoff
-        ]
-        longforms_dict[shortform] = longforms
-    return longforms_dict
+    def items(self):
+        return self.text_content.trid_content_pairs()
+
+    def values(self):
+        return iter(self.text_content)
 
 
-def comp_key(gilda_match):
+get_content_ids_for_agent_text = get_text_ref_ids_for_agent_text
+
+
+def get_plaintexts_for_content_ids(ids, *, contains=None):
+    return ContentWrapper(get_plaintexts_for_text_ref_ids(ids, contains=contains))
+
+
+def _comp_key(gilda_match):
     namespace = gilda_match.get_namespaces().pop()
     namespace_priority = {"FPLX": 0, "HGNC": 1}.get(namespace, 2)
     return (namespace_priority, gilda_match.score)
+
+
+def ground(agent_text):
+    groundings = sorted(gilda.ground(agent_text), key=_comp_key)
+    if not groundings:
+        return "ungrounded"
+    term = groundings[0].term
+    return f"{term.db}:{term}"
+
+
+def get_name(grounding):
+    db, id_ = grounding.split(":", maxsplit=1)
+    names = gilda.get_names(grounding, id_, status="name")
+    if not names:
+        return ""
+    return names[0]
 
 
 top_level_mesh_terms_of_interest = {
@@ -120,193 +120,118 @@ def mesh_term_of_interest(mesh_id):
     return bool(descendants & top_level_mesh_terms_of_interest)
 
 
-def auto_ground_longforms(longforms_dict):
-    """Try to ground proposed longforms with Gilda.
-
-    ``gilda.ground`` can find multiple potential groundings. This just
-    chooses the top grounding.
-
-    Parameters
-    ----------
-    longforms_dict : dict[str, list[tuple, int, float]]
-        A ``longforms_dict`` as produced by `adeftify`.
-
-    Returns
-    -------
-    grounding_dict : dict[str, dict[str, str]]
-        A dictionary mapping shortforms to inner dictionaries
-        which themselves map longform expansions to the top groundings
-        found with gilda. Groundings are in the form ``f"{db}:{id}"``
-        (e.g. HGNC:6091, GO:GO:0072593). Longform expansions for which
-        Gilda couldn't find a grounding are mapped to ``"ungrounded"``
-        in the inner dictionaries. It is assumed that each shortform
-        is equivalent in the sense that they should have essentially the
-        same set of possible groundings. One example is "NP" and "NPs",
-        where the later is the plural form of the former.
-    names : dict[str, str]
-        A dictionary mapping groundings of the form ``f{db}:{id}`` to
-        canonical names.  Names for all top groundings found by Gilda for
-        the input longform expansions across all shortforms are included.
-    pos_labels : list[str]
-        A list of groundings corresponding to positive labels.
-        The intention is that statements with agents grounded to anything
-        which isn't a positive label should be filtered out entirely.
-        Positive labels correspond to groundings which are of interest
-        within INDRA statements. Currently, all top groundings Gilda
-        finds for the input longform expansions are considered positive
-        labels. 
-
-    Notes
-    -----
-  
-    `auto_ground_longforms` is experimental and currently its output should be
-    reviewed by a human annotator.
-    
-    """
-    grounding_dict = {}
-    names = {}
-    for shortform, longforms in longforms_dict.items():
-        grounding_map = {}
-        for longform, _, _ in longforms:
-            # if the longform is the shortform itself, then filter it out. We haven't
-            # disambiguated anything.
-            if longform == shortform.lower() or len(longform) < len(shortform):
-                continue
-            groundings = sorted(gilda.ground(longform), key=comp_key)
-            if groundings:
-                grounding_term = groundings[0].term
-                grounding = f"{grounding_term.db}:{grounding_term.id}"
-                grounding_map[longform] = grounding
-                names[grounding] = groundings[0].term.entry_name
-            else:
-                grounding_map[longform] = "ungrounded"
-        grounding_dict[shortform] = grounding_map
-    candidate_pos_labels = list(names.keys())
-    # filter out mesh labels for entities deemed not of interest from pos_labels
-    pos_labels = []
-    for label in candidate_pos_labels:
-        if label.startswith("MESH:"):
-            _, mesh_id = label.split(":", maxsplit=1)
-            if not mesh_term_of_interest(mesh_id):
-                continue
-        pos_labels.append(label)
-        
-    return grounding_dict, names, pos_labels
+def get_mesh_terms_for_grounding(grounding):
+    ns, id_ = grounding.split(":", maxsplit=1)
+    return _get_mesh_terms_for_grounding(ns, id_)
 
 
-def build_corpus(grounding_dict):
-    """Build a corpus for model training based on a grounding dictionary.
+def is_pos_label(grounding):
+    db, id_ = grounding.split(":", maxsplit=1)
+    if db == "MESH":
+        return mesh_term_of_interest(id_)
+    if db == "HGNC":
+        return True
+    mesh_terms = set(get_mesh_terms_for_grounding(grounding))
+    return any([mesh_term_of_interest(mesh_id) for mesh_id in mesh_terms])
 
-    Parameters
-    ----------
-    grounding_dict : dict[str, dict[str, str]]
-        A grounding dictionary in the form returned by `auto_ground_longforms`.
-        Again, it is assumed that each shortform that appears as a key of the
-        outer dictionary is equivalent in the sense that they should have
-        essentially the same set of possible groundings. One example is "NP"
-        and "NPs", where the later is the plural form of the former.
 
-    Returns
-    -------
-    corpus : list[tuple[str, str]]
-        A list of tuples. Each tuple contains three elements, a text document,
-        an associated label for the text document. 
-    """
-    shortforms = list(grounding_dict.keys())
-    labeler = AdeftLabeler(grounding_dict)
-    corpus = []
-    seen_trids = set()
-    for shortform in grounding_dict.keys():
-        trids = get_text_ref_ids_for_agent_text(shortform)
-        trids = set(trids) - seen_trids
-        seen_trids.update(trids)
-        content = get_plaintexts_for_text_ref_ids(trids, contains=shortforms)
-        corpus.extend(
-            labeler.build_from_texts(
-                (text, trid) for trid, text in content.trid_content_pairs()
+class CosineSimilarity:
+    def __init__(
+            self,
+            *,
+            model=None,
+            batch_size=128,
+    ):
+        if model is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = SentenceTransformer(
+                "pritamdeka/S-Biomed-Roberta-snli-multinli-stsb",
+                device=device,
             )
-        )
-    return corpus
+        self.model = model
+        self.batch_size = batch_size
+
+    def __call__(self, longforms):
+        with torch.inference_mode():
+            embeddings = self.model.encode(
+                longforms,
+                batch_size=self.batch_size,
+                convert_to_tensor=True,
+                normalize_embeddings=True,
+            )
+        return embeddings @ embeddings.T
 
 
-def get_existing_grounding_info(shortform, *, path=ADEFT_PATH):
-    """Get grounding_map, names, and pos_labels for an existing adeft model.
-
-    Parameters
-    ----------
-    shortform : str
-        Look up the model for this shortform. For models with multiple
-        shortforms, one only needs to pick one of them.
-
-    path : Optional[str]
-        By default, `get_existing_grounding_map` uses the models for the
-        installed version of Adeft, but one may optionally specify a path
-        to the folder for a different Adeft version if one wants to get
-        the grounding info for a past model.
-
-    """
-    path = Path(path)
-    path /= "models"
-    available = adeft.get_available_models(path=path)
-    model_name = available[shortform]
-    model_path = path / model_name
-    with open(model_path / f"{model_name}_grounding_dict.json") as f:
-        grounding_map = json.load(f)
-    with open(model_path / f"{model_name}_names.json") as f:
-        names = json.load(f)
-    with gzip.GzipFile(model_path / f"{model_name}_model.gz") as f:
-        json_bytes = f.read()
-    model_info = json.loads(json_bytes.decode('utf-8'))
-    pos_labels = model_info["pos_labels"]
-    return grounding_map, names, pos_labels
+cosine_similarity = CosineSimilarity()
 
 
-def validate_and_refit_model(
-        shortforms,
-        corpus,
-        pos_labels,
-        *,
-        cv=5,
-        parameters=None,
-        random_state=None,
-        n_jobs=1,
-        min_class_size=10,
-):
-    """Build a corpus and then validate and train a model."""
-    if parameters is None:
-        parameters = {
-            "C": 100.0, "ngram_range": (1, 2), "max_features": 10000,
-            "class_weight": "balanced"
-        }
+def nearest_common_ancestor(grounding1, grounding2):
+    ns1, id1 = grounding1.split(":", maxsplit=1)
+    ns2, id2 = grounding2.split(":", maxsplit=1)
+    descendant = bio_ont.nearest_common_descendent(ns1, id1, ns2, id2, ["isa"])
+    if descendant is not None:
+        ns, id_ = descendant
+        return f"{ns}:{id_}"
+    return None
+    
+                        
+grounding_clusterer = GroundingClusterer(cosine_similarity, nearest_common_ancestor)
 
-    # AdeftClassifier uses GridSearchCV, so we need to turn our parameters into
-    # a param_grid even though no grid search is done here. A grid search would
-    # result in data leakage since we use all data here and have no untouched
-    # hold out set. The idea is just to pick a reasonable set of parameters and
-    # use it everywhere without parameter tuning. Since we're using logistic
-    # regression with very simple features, we can get away with this.  To
-    # explore more flexible models or do any kind of model comparison we
-    # will need a proper validation pipeline.
-    param_grid = {key: [val] for key, val in parameters.items()}
-    model = AdeftClassifier(shortforms, pos_labels, random_state=random_state)
-    X, y, trids = zip(*corpus)
-    counts = Counter(y)
-    keep = [
-        (text, label, trid) for text, label, trid in zip(X, y, trids)
-        if counts[label] >= min_class_size
-    ]
-    if not keep:
-        logger.warning(
-            "No data remains after excluding classes with fewer than"
-            f" {min_class_size} examples. Returning None."
-        )
-        return None
-    X, y, trids = zip(*keep)
-    if len(set(y)) == 1:
-        logger.warning(
-            "Only a single class remains after excluding classes with fewer"
-            f" than {min_class_size} examples. Returning None."
-        )
-        return None
-    model.cv(X, y, param_grid=param_grid, n_jobs=n_jobs, cv=cv)
-    return model
+
+adeft_constructor = AdeftConstructor(
+    get_content_ids_for_agent_text,
+    get_plaintexts_for_content_ids,
+    ground,
+    get_name,
+    is_pos_label,
+    grounding_clusterer,
+)
+
+
+def get_content_ids_for_gene_or_protein(grounding):
+    ns, id_ = grounding.split(":", maxsplit=1)
+    if ns not in {"HGNC", "UP"}:
+        return []
+    pmids = set()
+    if ns == "HGNC":
+        pmids.update(get_entrez_pmids_for_hgnc(id_))
+        uniprot_id = get_uniprot_id(id_)
+        pmids.update(get_entrez_pmids_for_uniprot(uniprot_id))
+    elif ns == "UP":
+        pmids.update(get_entrez_pmids_for_uniprot(id_))
+    return list(get_text_ref_ids_for_pmids(pmids).values())
+
+
+def get_content_ids_from_mesh(grounding):
+    ns, id_ = grounding.split(":", maxsplit=1)
+    if ns == "HGNC":
+        uniprot_id = get_uniprot_id(id_)
+        mesh_terms = get_mesh_terms_for_grounding("UP", uniprot_id_)
+    elif ns != "MESH":
+        mesh_terms = get_mesh_terms_for_grounding(ns_, id_)
+    else:
+        mesh_terms = [id_]
+    pmids = set()
+    for mesh_id in mesh_terms:
+        pmids.update((id_ for id_ in get_ids_for_mesh(mesh_id, major_topic=True)))
+    return list(get_text_ref_ids_for_pmids(pmids).values())
+
+
+def filter_func(text):
+    return (
+        len(text) > 5
+        and not {"xml", "elsevier", "doi", "article"}
+        <= set(BaselineTfidfVectorizer()._preprocess(text))
+    )
+
+
+disteval_constructor = DistantEvalCorpusConstructor(
+    get_content_ids_for_gene_or_protein,
+    get_content_ids_from_mesh,
+    get_mesh_terms_for_grounding,
+    get_plaintexts_for_content_ids,
+    filter_func=filter_func,
+)
+
+
+adeft_trainer = AdeftTrainer(adeft_constructor, disteval_constructor)
