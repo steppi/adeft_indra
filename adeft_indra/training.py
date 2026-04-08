@@ -168,10 +168,29 @@ cosine_similarity = CosineSimilarity()
 def nearest_common_ancestor(grounding1, grounding2):
     ns1, id1 = grounding1.split(":", maxsplit=1)
     ns2, id2 = grounding2.split(":", maxsplit=1)
-    descendant = bio_ont.nearest_common_descendant(ns1, id1, ns2, id2, ["isa"])
-    if descendant is not None:
-        ns, id_ = descendant
-        return f"{ns}:{id_}"
+
+    # the bio_ontology uses ancestor and descendant in the reverse order from
+    # what the adeft construction api expects. For BioOntology, the more general
+    # term is a descendant, for adeft, the more general term is an ancestor.
+    anc1 = bio_ont.descendants_rel(ns1, id1, ["isa"])
+    anc2 = bio_ont.descendants_rel(ns2, id2, ["isa"])
+
+    # The logic here is not solid enough for general production use. `descendants_rel`
+    # does a breadth first search through the tree, so this will pick a common ancestor
+    # of minimum height. Because the MESH tree isn't actually a tree, the common ancestor
+    # may not be unique, and sometimes this may pick a common ancestor that is undesirably
+    # vague over another ancestor of equal height which is suitably specific. Perhaps it
+    # may be useful to add weights to ["isa"] edges quantifying conceptual distance
+    # in some way and use a dykstra like algorithm to find the closest common ancestor.
+
+    # For now I'm leaving this function out of INDRA since it is probably not robust enough
+    # for general use. For Adeft, if an unreasonably vague ancestor is chosen, the `is_pos_label`
+    # logic should be able to at least cause this grounding to be an ignored negative label.
+    des_anc2 = set(anc2)
+    for node in reversed(anc1):
+        if node in anc_set2:
+            ns, id_ = node
+            return f"{ns}:{id_}"
     return None
     
                         
