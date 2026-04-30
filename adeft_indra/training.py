@@ -1,12 +1,12 @@
 import json
 import logging
-import torch
 
 from pathlib import Path
 
-from sentence_transformers import SentenceTransformer
-
+import torch
 import gilda
+
+from sentence_transformers import SentenceTransformer
 
 from indra.databases.hgnc_client import get_uniprot_id
 from indra.literature.pubmed_client import get_ids_for_mesh
