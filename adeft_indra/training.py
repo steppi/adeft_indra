@@ -20,6 +20,7 @@ from indra_db_lite import (
 from indra_db_lite import get_plaintexts_for_text_ref_ids
 from indra_db_lite import get_text_ref_ids_for_agent_text
 from indra_db_lite import get_text_ref_ids_for_pmids
+from indra_db_lite import get_text_ref_ids_sources_and_agent_texts_for_grounding
 
 from opaque.nlp.featurize import BaselineTfidfVectorizer
 
@@ -56,6 +57,26 @@ class ContentWrapper:
 
 
 get_content_ids_for_agent_text = get_text_ref_ids_for_agent_text
+
+
+def _is_db_source(source):
+    # Although these aren't the only db sources, they are the only ones
+    # that currently include evidence backed by articles, so they are the
+    # only ones that will appear in get_counts_for_grounding.
+    return source in {"phosphoelm", "ttrust"}
+
+
+def get_counts_for_grounding(curie):
+    """Get counts of articles in indra_db with mention of grounding."""
+    res = get_text_ref_ids_sources_and_agent_texts_for_grounding(curie)
+    db_ids = set()
+    reader_ids = set()
+    for source, (id_, _) in res.items():
+        if _is_db_source(source):
+            db_ids.add(id_)
+        else:
+            reader_ids.add(id_)
+    return len(db_ids), len(reader_ids)
 
 
 def get_plaintexts_for_content_ids(ids, *, contains=None):
