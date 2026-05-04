@@ -20,7 +20,9 @@ from indra_db_lite import (
 from indra_db_lite import get_plaintexts_for_text_ref_ids
 from indra_db_lite import get_text_ref_ids_for_agent_text
 from indra_db_lite import get_text_ref_ids_for_pmids
-from indra_db_lite import get_text_ref_ids_sources_and_agent_texts_for_grounding
+from indra_db_lite import (
+    get_text_ref_ids_sources_and_agent_texts_for_grounding
+)
 
 from opaque.nlp.featurize import BaselineTfidfVectorizer
 
@@ -246,6 +248,7 @@ adeft_constructor = AdeftConstructor(
     get_name,
     is_pos_label,
     grounding_clusterer,
+    filter_func=filter_func,
 )
 
 
@@ -293,6 +296,7 @@ disteval_constructor = DistantEvalCorpusConstructor(
     get_content_ids_from_mesh,
     get_mesh_terms_for_grounding,
     get_plaintexts_for_content_ids,
+    get_counts_for_grounding,
     filter_func=filter_func,
 )
 
