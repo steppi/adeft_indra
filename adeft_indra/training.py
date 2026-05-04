@@ -73,17 +73,19 @@ def get_counts_for_grounding(curie):
     res = get_text_ref_ids_sources_and_agent_texts_for_grounding(curie)
     db_ids = set()
     reader_ids = set()
-    for source, (id_, _) in res.items():
+    for source, examples in res.items():
         if _is_db_source(source):
-            db_ids.add(id_)
+            db_ids.update(id_ for _, id_ in examples)
         else:
-            reader_ids.add(id_)
+            reader_ids.update(id_ for _, id_ in examples)
     return len(db_ids), len(reader_ids)
 
 
-def get_plaintexts_for_content_ids(ids, *, contains=None):
+def get_plaintexts_for_content_ids(ids, *, contains=None, text_types=None):
     return ContentWrapper(
-        get_plaintexts_for_text_ref_ids(ids, contains=contains)
+        get_plaintexts_for_text_ref_ids(
+            ids, contains=contains, text_types=text_types
+        )
     )
 
 
@@ -241,6 +243,14 @@ grounding_clusterer = GroundingClusterer(
 )
 
 
+def filter_func(text):
+    return (
+        len(text) > 5
+        and not {"xml", "elsevier", "doi", "article"}
+        <= set(BaselineTfidfVectorizer()._preprocess(text))
+    )
+
+
 adeft_constructor = AdeftConstructor(
     get_content_ids_for_agent_text,
     get_plaintexts_for_content_ids,
@@ -281,14 +291,6 @@ def get_content_ids_from_mesh(grounding):
             (id_ for id_ in get_ids_for_mesh(mesh_id, major_topic=True))
         )
     return list(get_text_ref_ids_for_pmids(pmids).values())
-
-
-def filter_func(text):
-    return (
-        len(text) > 5
-        and not {"xml", "elsevier", "doi", "article"}
-        <= set(BaselineTfidfVectorizer()._preprocess(text))
-    )
 
 
 disteval_constructor = DistantEvalCorpusConstructor(
