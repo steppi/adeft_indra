@@ -9,7 +9,7 @@ import gilda
 from sentence_transformers import SentenceTransformer
 
 from indra.databases.hgnc_client import get_uniprot_id
-from indra.literature.pubmed_client import get_ids_for_mesh
+from indra.literature.pubmed_client import get_mesh_term_search_str, get_all_ids
 from indra.ontology.bio import BioOntology
 
 from indra_db_lite import get_entrez_pmids_for_hgnc
@@ -287,10 +287,11 @@ def get_content_ids_from_mesh(grounding):
         mesh_terms = [id_]
     pmids = set()
     for mesh_id in mesh_terms:
+        search_str = get_mesh_term_search_str(mesh_id, True)
         pmids.update(
             (
                 id_ for id_ in
-                get_ids_for_mesh(mesh_id, major_topic=True, retmax=100000)
+                get_all_ids(search_str)
             )
         )
     return list(get_text_ref_ids_for_pmids(pmids).values()), mesh_terms
