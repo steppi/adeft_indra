@@ -303,7 +303,7 @@ def get_content_ids_from_mesh(grounding):
             )
         )
     result = (list(get_text_ref_ids_for_pmids(pmids).values()), mesh_terms)
-    mesh_id_cache_path[grounding] = result
+    mesh_id_cache[grounding] = result
     return result
 
 
