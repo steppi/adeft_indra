@@ -280,9 +280,9 @@ def get_content_ids_from_mesh(grounding):
     ns, id_ = grounding.split(":", maxsplit=1)
     if ns == "HGNC":
         uniprot_id = get_uniprot_id(id_)
-        mesh_terms = get_mesh_terms_for_grounding("UP", uniprot_id)
+        mesh_terms = get_mesh_terms_for_grounding(f"UP:{uniprot_id}")
     elif ns != "MESH":
-        mesh_terms = get_mesh_terms_for_grounding(ns, id_)
+        mesh_terms = get_mesh_terms_for_grounding(f"{ns}:{id_}")
     else:
         mesh_terms = [id_]
     pmids = set()
@@ -290,7 +290,7 @@ def get_content_ids_from_mesh(grounding):
         pmids.update(
             (id_ for id_ in get_ids_for_mesh(mesh_id, major_topic=True))
         )
-    return list(get_text_ref_ids_for_pmids(pmids).values())
+    return list(get_text_ref_ids_for_pmids(pmids).values()), mesh_terms
 
 
 disteval_constructor = DistantEvalCorpusConstructor(
