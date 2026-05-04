@@ -288,7 +288,10 @@ def get_content_ids_from_mesh(grounding):
     pmids = set()
     for mesh_id in mesh_terms:
         pmids.update(
-            (id_ for id_ in get_ids_for_mesh(mesh_id, major_topic=True))
+            (
+                id_ for id_ in
+                get_ids_for_mesh(mesh_id, major_topic=True, retmax=100000)
+            )
         )
     return list(get_text_ref_ids_for_pmids(pmids).values()), mesh_terms
 
