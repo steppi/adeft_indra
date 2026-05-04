@@ -32,6 +32,7 @@ from adeft.construct import (
 )
 from adeft.util import get_canonical_model_name
 
+from adeft_indra.locations import ADEFT_INDRA_HOME
 from adeft_indra.results import ResultsManager
 
 
@@ -276,7 +277,14 @@ def get_content_ids_for_gene_or_protein(grounding):
     return list(get_text_ref_ids_for_pmids(pmids).values())
 
 
+mesh_id_cache_path = Path(ADEFT_INDRA_HOME) / "mesh_id_cache.db"
+mesh_id_cache = ResultsManager(mesh_id_cache_path)
+
+
 def get_content_ids_from_mesh(grounding):
+    if grounding in mesh_id_cache:
+        return mesh_id_cache[grounding]
+
     ns, id_ = grounding.split(":", maxsplit=1)
     if ns == "HGNC":
         uniprot_id = get_uniprot_id(id_)
@@ -294,7 +302,9 @@ def get_content_ids_from_mesh(grounding):
                 get_all_ids(search_str)
             )
         )
-    return list(get_text_ref_ids_for_pmids(pmids).values()), mesh_terms
+    result = (list(get_text_ref_ids_for_pmids(pmids).values()), mesh_terms)
+    mesh_id_cache_path[grounding] = result
+    return result
 
 
 disteval_constructor = DistantEvalCorpusConstructor(
