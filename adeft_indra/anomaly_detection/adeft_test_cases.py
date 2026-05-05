@@ -1,7 +1,7 @@
 import argparse
 import logging
 from multiprocessing import Pool
-
+import random
 
 from adeft import available_shortforms
 from adeft.disambiguate import load_disambiguator
@@ -14,12 +14,14 @@ from adeft_indra.results import ResultsManager
 
 logger = logging.getLogger(__file__)
 
+rng = random.Random(1729)
+
 
 def get_test_cases_for_model(arg):
     model_name, disamb, results_db_path = arg
     results_db = ResultsManager(results_db_path)
     print(f"Generating test cases for {model_name}")
-    cases = adeft_trainer.get_opaque_test_cases_from_adeft_model(disamb)
+    cases = adeft_trainer.get_opaque_test_cases_from_adeft_model(disamb, rng=rng)
     results_db[model_name] = cases
     print(f"Success for {model_name}")
 
