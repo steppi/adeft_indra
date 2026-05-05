@@ -10,7 +10,7 @@ from indra_db_lite import get_plaintexts_for_text_ref_ids
 from opaque.nlp.models import GroundingAnomalyDetector
 from opaque.train import train_anomaly_detector
 
-from adeft_indra.anomaly_detection.results import ResultsManager
+from adeft_indra.results import ResultsManager
 
 
 def get_key(
@@ -35,12 +35,15 @@ def process_test_case(args: Tuple) -> None:
         mesh_terms,
         num_entrez_texts,
         num_mesh_texts,
+        num_db_texts,
+        num_reader_texts,
         train_trids,
         test_data,
         nu_list,
         max_features_list,
         run_name,
         predict_shape_params,
+        results_db_path,
     ) = args
     with lock:
         print(
@@ -49,8 +52,6 @@ def process_test_case(args: Tuple) -> None:
             f"{max_features_list}"
         )
     train_texts = list(get_plaintexts_for_text_ref_ids(train_trids))
-    # Exclude texts that appear in the training data from the test
-    # data.
     test_texts = get_plaintexts_for_text_ref_ids(
         test_data,
         text_types=['abstract', 'fulltext'],
@@ -64,6 +65,8 @@ def process_test_case(args: Tuple) -> None:
         random_state=1729,
         num_mesh_texts=num_mesh_texts,
         num_entrez_texts=num_entrez_texts,
+        num_db_texts=num_db_texts,
+        num_reader_texts=num_reader_texts,
         predict_shape_params=predict_shape_params,
     )
     ad_model = GroundingAnomalyDetector.load_model_info(result["model"])
@@ -73,7 +76,7 @@ def process_test_case(args: Tuple) -> None:
         for trid, text in test_texts.trid_content_pairs()
     ]
     if test_data:
-        test_texts, test_labels, test_trids = zip(*test_data)
+        test_texts, test_labels, _ = zip(*test_data)
         preds = ad_model.predict(test_texts).flatten()
         test_labels = np.array(test_labels)
         tn = (preds == 1.0) & (test_labels == curie)
@@ -95,7 +98,8 @@ def process_test_case(args: Tuple) -> None:
         'num_mesh_texts': num_mesh_texts,
     }
     key = get_key(model_name, curie, nu_list, max_features_list)
-    ResultsManager.insert(run_name, key, result)
+    results_db = ResultsManager(results_db_path)
+    results_db[key] = result
     with lock:
         print(
             "Success: "
@@ -110,37 +114,52 @@ if __name__ == '__main__':
         " adeft test cases."
     )
     parser.add_argument('test_cases_path')
-    parser.add_argument('run_name')
+    parser.add_argument('results_db_path')
     parser.add_argument('--nu_list', nargs='+', type=float)
     parser.add_argument('--mf_list', nargs='+', type=int)
     parser.add_argument('--n_jobs', type=int, default=1)
     parser.add_argument('--predict_shape_params', action='store_true')
     lock = Lock()
     args = parser.parse_args()
-    test_cases_path = args.test_cases_path
-    with open(test_cases_path, 'rb') as f:
-        test_cases = pickle.load(f)
+
+    test_cases_path = args.test_cases
+    results_db_path = args.results_db_path
     run_name = args.run_name
     nu_list = args.nu_list
     mf_list = args.mf_list
     n_jobs = args.n_jobs
     predict_shape_params = args.predict_shape_params
-    if run_name not in ResultsManager.show_tables():
-        ResultsManager.add_table(run_name)
+
+    test_cases_db = ResultsManager(test_cases_path)
+    results_db = ResultsManager(results_db_path)
+
+    test_cases = []
+
+    for model_name, info in test_cases_db.items():
+        agent_texts = info["shortforms"]
+        test_data = info["test_data"]
+        for curie, training_info in info["training_info"].items():
+            test_cases.append(
+                [
+                    model_name,
+                    agent_texts,
+                    curie,
+                    training_info["mesh_terms"],
+                    training_info["num_entrez_texts"],
+                    training_info["num_mesh_texts"],
+                    training_info["num_reader_texts"],
+                    training_info["train_ids"],
+                    test_data,
+                    nu_list,
+                    mf_list,
+                    run_name,
+                    predict_shape_params,
+                ]
+            )
+
     test_cases = [
-        case + (
-            nu_list,
-            mf_list,
-            run_name,
-            predict_shape_params,
-        )
-        for case in test_cases
-        if (
-                ResultsManager.get(
-                    run_name, get_key(case[0], case[2], nu_list, mf_list)
-                )
-                is None
-        )
+        case for case in test_cases
+        if get_key(case[0], case[2], nu_list, mf_list) not in results_db
     ]
 
     gen = random.Random(1729)
