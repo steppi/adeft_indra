@@ -94,7 +94,10 @@ def process_test_case(args: Tuple) -> None:
     result['train_info'] = {
         'num_entrez_texts': num_entrez_texts,
         'num_mesh_texts': num_mesh_texts,
+        'num_db_texts': num_db_texts,
+        'num_reader_texts': num_reader_texts,
     }
+
     key = get_key(model_name, curie, nu_list, max_features_list)
     results_db = ResultsManager(results_db_path)
     results_db[key] = result
