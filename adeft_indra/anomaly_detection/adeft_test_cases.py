@@ -20,8 +20,8 @@ def get_test_cases_for_model(arg):
     results_db = ResultsManager(results_db_path)
     print(f"Generating test cases for {model_name}")
     cases = adeft_trainer.get_opaque_test_cases_from_adeft_model(disamb)
-    print(f"Success for {model_name}")
     results_db[model_name] = cases
+    print(f"Success for {model_name}")
 
 
 if __name__ == "__main__":
