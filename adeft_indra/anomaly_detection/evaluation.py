@@ -1,5 +1,5 @@
 import argparse
-from multiprocessing import Pool, Lock
+from multiprocessing import Pool
 import numpy as np
 import pickle
 import random
@@ -41,16 +41,14 @@ def process_test_case(args: Tuple) -> None:
         test_data,
         nu_list,
         max_features_list,
-        run_name,
         predict_shape_params,
         results_db_path,
     ) = args
-    with lock:
-        print(
-            "Started: "
-            f"{model_name}--{agent_texts}--{curie}--{nu_list}--"
-            f"{max_features_list}"
-        )
+    print(
+        "Started: "
+        f"{model_name}--{agent_texts}--{curie}--{nu_list}--"
+        f"{max_features_list}"
+    )
     train_texts = list(get_plaintexts_for_text_ref_ids(train_trids))
     test_texts = get_plaintexts_for_text_ref_ids(
         test_data,
@@ -100,12 +98,11 @@ def process_test_case(args: Tuple) -> None:
     key = get_key(model_name, curie, nu_list, max_features_list)
     results_db = ResultsManager(results_db_path)
     results_db[key] = result
-    with lock:
-        print(
-            "Success: "
-            f"{model_name}--{agent_texts}--{curie}--{nu_list}--"
-            f"{max_features_list}"
-        )
+    print(
+        "Success: "
+        f"{model_name}--{agent_texts}--{curie}--{nu_list}--"
+        f"{max_features_list}"
+    )
 
 
 if __name__ == '__main__':
@@ -119,12 +116,10 @@ if __name__ == '__main__':
     parser.add_argument('--mf_list', nargs='+', type=int)
     parser.add_argument('--n_jobs', type=int, default=1)
     parser.add_argument('--predict_shape_params', action='store_true')
-    lock = Lock()
     args = parser.parse_args()
 
-    test_cases_path = args.test_cases
+    test_cases_path = args.test_cases_path
     results_db_path = args.results_db_path
-    run_name = args.run_name
     nu_list = args.nu_list
     mf_list = args.mf_list
     n_jobs = args.n_jobs
@@ -145,15 +140,16 @@ if __name__ == '__main__':
                     agent_texts,
                     curie,
                     training_info["mesh_terms"],
-                    training_info["num_entrez_texts"],
-                    training_info["num_mesh_texts"],
-                    training_info["num_reader_texts"],
+                    training_info["num_entrez"],
+                    training_info["num_mesh"],
+                    training_info["db_count"],
+                    training_info["reader_count"],
                     training_info["train_ids"],
                     test_data,
                     nu_list,
                     mf_list,
-                    run_name,
                     predict_shape_params,
+                    results_db_path,
                 ]
             )
 
