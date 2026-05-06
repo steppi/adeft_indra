@@ -118,6 +118,7 @@ if __name__ == '__main__':
     parser.add_argument('--mf_list', nargs='+', type=int)
     parser.add_argument('--n_jobs', type=int, default=1)
     parser.add_argument('--predict_shape_params', action='store_true')
+    parser.add_argument('--max_train_size', type=int)
     args = parser.parse_args()
 
     test_cases_path = args.test_cases_path
@@ -126,6 +127,7 @@ if __name__ == '__main__':
     mf_list = args.mf_list
     n_jobs = args.n_jobs
     predict_shape_params = args.predict_shape_params
+    max_train_size = args.max_train_size
 
     test_cases_db = ResultsManager(test_cases_path)
     results_db = ResultsManager(results_db_path)
@@ -136,6 +138,11 @@ if __name__ == '__main__':
         agent_texts = info["shortforms"]
         test_data = info["test_data"]
         for curie, training_info in info["training_info"].items():
+            if (
+                    max_train_size is not None
+                    and len(training_info["train_trids"]) > max_train_size
+            ):
+                continue
             test_cases.append(
                 [
                     model_name,
