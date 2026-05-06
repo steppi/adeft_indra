@@ -65,6 +65,7 @@ def process_test_case(args: Tuple) -> None:
         num_db_texts=num_db_texts,
         num_reader_texts=num_reader_texts,
         predict_shape_params=predict_shape_params,
+        solver="sgd",
     )
     ad_model = GroundingAnomalyDetector.load_model_info(result["model"])
 
@@ -72,6 +73,7 @@ def process_test_case(args: Tuple) -> None:
         (text, test_data[trid], trid)
         for trid, text in test_texts.trid_content_pairs()
     ]
+
     if test_data:
         test_texts, test_labels, _ = zip(*test_data)
         preds = ad_model.predict(test_texts).flatten()
@@ -83,6 +85,7 @@ def process_test_case(args: Tuple) -> None:
         J = sens + spec - 1
     else:
         preds, test_labels, sens, spec, J = (None, ) * 5
+
     result['test_stats'] = {
         'sensitivity': sens, 'specifity': spec, 'J': J
     }
@@ -90,6 +93,7 @@ def process_test_case(args: Tuple) -> None:
         'labels': test_labels,
         'preds': preds,
     }
+
     result['train_info'] = {
         'num_entrez_texts': num_entrez_texts,
         'num_mesh_texts': num_mesh_texts,
