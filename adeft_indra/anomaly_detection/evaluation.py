@@ -1,7 +1,6 @@
 import argparse
 from multiprocessing import Pool
 import numpy as np
-import pickle
 import random
 from typing import List, Optional, Tuple
 
