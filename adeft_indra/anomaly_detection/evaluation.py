@@ -140,7 +140,7 @@ if __name__ == '__main__':
         for curie, training_info in info["training_info"].items():
             if (
                     max_train_size is not None
-                    and len(training_info["train_trids"]) > max_train_size
+                    and len(training_info["train_ids"]) > max_train_size
             ):
                 continue
             test_cases.append(
