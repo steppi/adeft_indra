@@ -49,10 +49,6 @@ def process_test_case(args: Tuple) -> None:
         f"{max_features_list}"
     )
     train_texts = list(get_plaintexts_for_text_ref_ids(train_trids))
-    test_texts = get_plaintexts_for_text_ref_ids(
-        test_data,
-        text_types=['abstract', 'fulltext'],
-    )
 
     result = train_anomaly_detector(
         agent_texts,
@@ -67,8 +63,13 @@ def process_test_case(args: Tuple) -> None:
         predict_shape_params=predict_shape_params,
         solver="sgd",
     )
+    train_texts = None
     ad_model = GroundingAnomalyDetector.load_model_info(result["model"])
 
+    test_texts = get_plaintexts_for_text_ref_ids(
+        test_data,
+        text_types=['abstract', 'fulltext'],
+    )
     test_data = [
         (text, test_data[trid], trid)
         for trid, text in test_texts.trid_content_pairs()
@@ -77,12 +78,14 @@ def process_test_case(args: Tuple) -> None:
     if test_data:
         test_texts, test_labels, _ = zip(*test_data)
         preds = ad_model.predict(test_texts).flatten()
+        test_texts = None
         test_labels = np.array(test_labels)
         tn = (preds == 1.0) & (test_labels == curie)
         tp = (preds == -1.0) & (test_labels != curie)
         sens = sum(tp) / sum(test_labels != curie)
         spec = sum(tn) / sum(test_labels == curie)
         J = sens + spec - 1
+        test_labels = None
     else:
         preds, test_labels, sens, spec, J = (None, ) * 5
 
