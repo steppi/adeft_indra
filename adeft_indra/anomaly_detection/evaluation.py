@@ -85,7 +85,6 @@ def process_test_case(args: Tuple) -> None:
         sens = sum(tp) / sum(test_labels != curie)
         spec = sum(tn) / sum(test_labels == curie)
         J = sens + spec - 1
-        test_labels = None
     else:
         preds, test_labels, sens, spec, J = (None, ) * 5
 
