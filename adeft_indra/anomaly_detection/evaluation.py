@@ -88,10 +88,10 @@ def process_test_case(args: Tuple) -> None:
         sens = sum(tp) / sum(test_labels != curie)
         spec = sum(tn) / sum(test_labels == curie)
         J = sens + spec - 1
-        inliers = test_labels[test_labels == grounding]
-        inlier_preds = test_preds[test_labels == grounding]
-        outliers = test_labels[test_labels != grounding]
-        outlier_preds = test_labels[test_labels != grounding]
+        inliers = test_labels[test_labels == curie]
+        inlier_preds = preds[test_labels == curie]
+        outliers = test_labels[test_labels != curie]
+        outlier_preds = preds[test_labels != curie]
         N_inlier = len(inliers)
         K_inlier = np.sum(inlier_preds == -1)
         N_outlier = len(outliers)
