@@ -50,7 +50,7 @@ def process_test_case(args: Tuple) -> None:
     )
     train_texts = list(get_plaintexts_for_text_ref_ids(train_trids))
 
-    result = {"shortforms": shortforms, "grounding": curie}
+    result = {"shortforms": agent_texts, "grounding": curie}
     result.update(
         train_anomaly_detector(
             agent_texts,
