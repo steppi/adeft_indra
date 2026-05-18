@@ -50,18 +50,21 @@ def process_test_case(args: Tuple) -> None:
     )
     train_texts = list(get_plaintexts_for_text_ref_ids(train_trids))
 
-    result = train_anomaly_detector(
-        agent_texts,
-        train_texts,
-        nu_list,
-        max_features_list,
-        random_state=1729,
-        num_mesh_texts=num_mesh_texts,
-        num_entrez_texts=num_entrez_texts,
-        num_db_texts=num_db_texts,
-        num_reader_texts=num_reader_texts,
-        predict_shape_params=predict_shape_params,
-        solver="sgd",
+    result = {"shortforms": shortforms, "grounding": curie}
+    result.update(
+        train_anomaly_detector(
+            agent_texts,
+            train_texts,
+            nu_list,
+            max_features_list,
+            random_state=1729,
+            num_mesh_texts=num_mesh_texts,
+            num_entrez_texts=num_entrez_texts,
+            num_db_texts=num_db_texts,
+            num_reader_texts=num_reader_texts,
+            predict_shape_params=predict_shape_params,
+            solver="sgd",
+        )
     )
     train_texts = None
     ad_model = GroundingAnomalyDetector.load_model_info(result["model"])
@@ -85,8 +88,17 @@ def process_test_case(args: Tuple) -> None:
         sens = sum(tp) / sum(test_labels != curie)
         spec = sum(tn) / sum(test_labels == curie)
         J = sens + spec - 1
+        inliers = test_labels[test_labels == grounding]
+        inlier_preds = test_preds[test_labels == grounding]
+        outliers = test_labels[test_labels != grounding]
+        outlier_preds = test_labels[test_labels != grounding]
+        N_inlier = len(inliers)
+        K_inlier = np.sum(inlier_preds == -1)
+        N_outlier = len(outliers)
+        K_outlier = np.sum(outlier_preds == 1)
     else:
         preds, test_labels, sens, spec, J = (None, ) * 5
+        N_inlier, K_inlier, N_outlier, K_outlier = (None, ) * 4
 
     result['test_stats'] = {
         'sensitivity': sens, 'specifity': spec, 'J': J
@@ -94,6 +106,10 @@ def process_test_case(args: Tuple) -> None:
     result['test_info'] = {
         'labels': test_labels,
         'preds': preds,
+        'N_inlier': N_inlier,
+        'K_inlier': K_inlier,
+        'N_outlier': N_outlier,
+        'K_outlier': K_outlier,
     }
 
     result['train_info'] = {
